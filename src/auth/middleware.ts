@@ -2,6 +2,23 @@ import type { Context, Next } from 'hono';
 import type { AppEnv, MoltbotEnv } from '../types';
 import { verifyAccessJWT } from './jwt';
 
+function normalizeAccessTeamDomain(raw: string): { host: string; issuer: string } {
+  const input = raw.trim();
+  // If it's a URL, extract the host (ignore any path like "/ichitaro")
+  if (input.startsWith('https://') || input.startsWith('http://')) {
+    const url = new URL(input);
+    const host = url.host;
+    return { host, issuer: `https://${host}` };
+  }
+
+  // Strip any accidental leading slashes and any trailing path fragments
+  const cleaned = input.replace(/^\/+/, '').split('/')[0];
+
+  // If user provided just the team slug (e.g. "ichitaro"), expand it
+  const host = cleaned.includes('.') ? cleaned : `${cleaned}.cloudflareaccess.com`;
+  return { host, issuer: `https://${host}` };
+}
+
 /**
  * Options for creating an access middleware
  */
@@ -56,11 +73,11 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
       return next();
     }
 
-    const teamDomain = c.env.CF_ACCESS_TEAM_DOMAIN;
+    const teamDomainRaw = c.env.CF_ACCESS_TEAM_DOMAIN;
     const expectedAud = c.env.CF_ACCESS_AUD; // Optional: when set, JWT audience is verified
 
     // Check if CF Access is configured (only team domain is required)
-    if (!teamDomain) {
+    if (!teamDomainRaw) {
       if (type === 'json') {
         return c.json(
           {
@@ -84,12 +101,14 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
       }
     }
 
+    const { host: teamDomain, issuer } = normalizeAccessTeamDomain(teamDomainRaw);
+
     // Get JWT
     const jwt = extractJWT(c);
 
     if (!jwt) {
       if (type === 'html' && redirectOnMissing) {
-        return c.redirect(`https://${teamDomain}`, 302);
+        return c.redirect(issuer, 302);
       }
 
       if (type === 'json') {
@@ -107,7 +126,7 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
             <body>
               <h1>Unauthorized</h1>
               <p>Missing Cloudflare Access token.</p>
-              <a href="https://${teamDomain}">Login</a>
+              <a href="${issuer}">Login</a>
             </body>
           </html>
         `,
@@ -139,7 +158,7 @@ export function createAccessMiddleware(options: AccessMiddlewareOptions) {
             <body>
               <h1>Unauthorized</h1>
               <p>Your Cloudflare Access session is invalid or expired.</p>
-              <a href="https://${teamDomain}">Login again</a>
+              <a href="${issuer}">Login again</a>
             </body>
           </html>
         `,

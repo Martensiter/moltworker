@@ -263,4 +263,43 @@ describe('createAccessMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
     expect(redirectMock).toHaveBeenCalledWith('https://team.cloudflareaccess.com', 302);
   });
+
+  it('normalizes CF_ACCESS_TEAM_DOMAIN when it is a team slug', async () => {
+    const { c, redirectMock } = createFullMockContext({
+      env: { CF_ACCESS_TEAM_DOMAIN: 'ichitaro', CF_ACCESS_AUD: 'aud123' },
+    });
+    const middleware = createAccessMiddleware({ type: 'html', redirectOnMissing: true });
+    const next = vi.fn();
+
+    await middleware(c, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(redirectMock).toHaveBeenCalledWith('https://ichitaro.cloudflareaccess.com', 302);
+  });
+
+  it('normalizes CF_ACCESS_TEAM_DOMAIN when it is a URL', async () => {
+    const { c, redirectMock } = createFullMockContext({
+      env: { CF_ACCESS_TEAM_DOMAIN: 'https://ichitaro.cloudflareaccess.com', CF_ACCESS_AUD: 'aud123' },
+    });
+    const middleware = createAccessMiddleware({ type: 'html', redirectOnMissing: true });
+    const next = vi.fn();
+
+    await middleware(c, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(redirectMock).toHaveBeenCalledWith('https://ichitaro.cloudflareaccess.com', 302);
+  });
+
+  it('normalizes CF_ACCESS_TEAM_DOMAIN when it contains a leading slash', async () => {
+    const { c, redirectMock } = createFullMockContext({
+      env: { CF_ACCESS_TEAM_DOMAIN: '/ichitaro', CF_ACCESS_AUD: 'aud123' },
+    });
+    const middleware = createAccessMiddleware({ type: 'html', redirectOnMissing: true });
+    const next = vi.fn();
+
+    await middleware(c, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(redirectMock).toHaveBeenCalledWith('https://ichitaro.cloudflareaccess.com', 302);
+  });
 });
