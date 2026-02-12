@@ -1,0 +1,7 @@
+node_modules
+.next
+dist
+.git
+*.log
+keiba-calculator/node_modules
+keiba-calculator/.next

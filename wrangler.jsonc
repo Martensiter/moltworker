@@ -56,12 +56,13 @@
     },
   ],
   // R2 bucket for persistent storage (moltbot data, conversations, etc.)
-  "r2_buckets": [
-    {
-      "binding": "MOLTBOT_BUCKET",
-      "bucket_name": "moltbot-data",
-    },
-  ],
+  // Commented out until R2 is enabled in the Cloudflare dashboard
+  // "r2_buckets": [
+  //   {
+  //     "binding": "MOLTBOT_BUCKET",
+  //     "bucket_name": "moltbot-data",
+  //   },
+  // ],
 
   // Browser Rendering binding for CDP shim
   "browser": {

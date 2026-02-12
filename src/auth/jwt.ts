@@ -16,7 +16,7 @@ import type { JWTPayload } from '../types';
 export async function verifyAccessJWT(
   token: string,
   teamDomain: string,
-  expectedAud: string,
+  expectedAud?: string,
 ): Promise<JWTPayload> {
   // Ensure teamDomain has https:// prefix for issuer check
   const issuer = teamDomain.startsWith('https://') ? teamDomain : `https://${teamDomain}`;
@@ -25,9 +25,11 @@ export async function verifyAccessJWT(
   const JWKS = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));
 
   // Verify the JWT using jose
+  // AUD verification is optional - Cloudflare Access at the network level
+  // already ensures only authenticated users can reach the Worker
   const { payload } = await jwtVerify(token, JWKS, {
     issuer,
-    audience: expectedAud,
+    ...(expectedAud ? { audience: expectedAud } : {}),
   });
 
   // Cast to our JWTPayload type

@@ -219,6 +219,27 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     }
 }
 
+// Generic model override (OPENCLAW_MODEL=provider/model-id)
+// Works with any provider (anthropic, openai, etc.)
+// Examples:
+//   anthropic/claude-haiku-3-5-20241022   (cheapest Anthropic)
+//   anthropic/claude-sonnet-4-20250514    (mid-tier)
+//   openai/gpt-4o-mini                    (cheap OpenAI)
+if (process.env.OPENCLAW_MODEL) {
+    const raw = process.env.OPENCLAW_MODEL;
+    const slashIdx = raw.indexOf('/');
+    if (slashIdx > 0) {
+        const modelProvider = raw.substring(0, slashIdx);
+        const modelId = raw.substring(slashIdx + 1);
+        config.agents = config.agents || {};
+        config.agents.defaults = config.agents.defaults || {};
+        config.agents.defaults.model = { primary: modelProvider + '/' + modelId };
+        console.log('Model override: ' + modelProvider + '/' + modelId);
+    } else {
+        console.warn('OPENCLAW_MODEL format should be provider/model-id, got: ' + raw);
+    }
+}
+
 // Telegram configuration
 // Overwrite entire channel object to drop stale keys from old R2 backups
 // that would fail OpenClaw's strict config validation (see #47)
