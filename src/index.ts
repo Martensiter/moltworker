@@ -33,6 +33,18 @@ import loadingPageHtml from './assets/loading.html';
 import configErrorHtml from './assets/config-error.html';
 
 /**
+ * WebSocket connection state tracker for timeout management
+ *
+ * STABILITY IMPROVEMENTS:
+ * - Tracks last message time to detect stuck connections
+ * - Counts messages for debugging connection quality
+ */
+interface WebSocketState {
+  lastMessageTime: number;
+  messageCount: number;
+}
+
+/**
  * Transform error messages from the gateway to be more user-friendly.
  */
 function transformErrorMessage(message: string, host: string): string {
@@ -45,6 +57,62 @@ function transformErrorMessage(message: string, host: string): string {
   }
 
   return message;
+}
+
+/**
+ * Safely parse JSON with error logging
+ *
+ * STABILITY IMPROVEMENTS:
+ * - Prevents exceptions from JSON.parse from crashing the WebSocket relay
+ * - Logs parse failures for debugging
+ * - Allows graceful fallback to sending unparsed data
+ */
+function safeJsonParse(data: string, debugLogs: boolean): { parsed: boolean; data: Record<string, unknown> | null } {
+  try {
+    const result = JSON.parse(data);
+    return { parsed: true, data: result };
+  } catch (e) {
+    if (debugLogs) {
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.log('[WS] JSON parse failed:', errorMsg, 'data length:', data.length);
+    }
+    return { parsed: false, data: null };
+  }
+}
+
+/**
+ * Setup WebSocket inactivity timeout handler
+ *
+ * STABILITY IMPROVEMENTS:
+ * - Detects stuck connections that stop sending messages
+ * - Automatically closes idle connections after 5 minutes
+ * - Prevents resource leaks from long-lived dead connections
+ * - Configurable check interval (1/4 of timeout, max 10s)
+ */
+function setupInactivityTimeout(
+  ws: WebSocket,
+  wsState: WebSocketState,
+  timeoutMs: number,
+  debugLogs: boolean,
+  label: string,
+): { cleanup: () => void } {
+  let timeoutId: ReturnType<typeof setInterval>;
+
+  timeoutId = setInterval(() => {
+    const now = Date.now();
+    const inactiveMs = now - wsState.lastMessageTime;
+
+    if (inactiveMs > timeoutMs && ws.readyState === WebSocket.OPEN) {
+      if (debugLogs) {
+        console.log(`[WS] ${label} inactivity timeout (${inactiveMs}ms > ${timeoutMs}ms), closing connection`);
+      }
+      ws.close(1000, 'Inactivity timeout');
+    }
+  }, Math.min(timeoutMs / 4, 10000)); // Check every 1/4 of timeout or 10s, whichever is smaller
+
+  return {
+    cleanup: () => clearInterval(timeoutId),
+  };
 }
 
 export { Sandbox };
@@ -283,6 +351,7 @@ app.all('*', async (c) => {
   if (isWebSocketRequest) {
     const debugLogs = c.env.DEBUG_ROUTES === 'true';
     const redactedSearch = redactSensitiveParams(url);
+    const WS_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     console.log('[WS] Proxying WebSocket connection to Moltbot');
     if (debugLogs) {
@@ -327,17 +396,38 @@ app.all('*', async (c) => {
       console.log('[WS] serverWs.readyState:', serverWs.readyState);
     }
 
+    // Initialize WebSocket state for inactivity tracking
+    const clientState: WebSocketState = { lastMessageTime: Date.now(), messageCount: 0 };
+    const containerState: WebSocketState = { lastMessageTime: Date.now(), messageCount: 0 };
+
+    // Setup inactivity timeout handlers
+    const clientTimeout = setupInactivityTimeout(serverWs, clientState, WS_INACTIVITY_TIMEOUT_MS, debugLogs, 'Client');
+    const containerTimeout = setupInactivityTimeout(
+      containerWs,
+      containerState,
+      WS_INACTIVITY_TIMEOUT_MS,
+      debugLogs,
+      'Container',
+    );
+
     // Relay messages from client to container
     serverWs.addEventListener('message', (event) => {
+      clientState.lastMessageTime = Date.now();
+      clientState.messageCount++;
+
       if (debugLogs) {
         console.log(
-          '[WS] Client -> Container:',
+          '[WS] Client -> Container (msg #' + clientState.messageCount + '):',
           typeof event.data,
           typeof event.data === 'string' ? event.data.slice(0, 200) : '(binary)',
         );
       }
       if (containerWs.readyState === WebSocket.OPEN) {
-        containerWs.send(event.data);
+        try {
+          containerWs.send(event.data);
+        } catch (e) {
+          console.error('[WS] Failed to send message to container:', e instanceof Error ? e.message : String(e));
+        }
       } else if (debugLogs) {
         console.log('[WS] Container not open, readyState:', containerWs.readyState);
       }
@@ -345,9 +435,12 @@ app.all('*', async (c) => {
 
     // Relay messages from container to client, with error transformation
     containerWs.addEventListener('message', (event) => {
+      containerState.lastMessageTime = Date.now();
+      containerState.messageCount++;
+
       if (debugLogs) {
         console.log(
-          '[WS] Container -> Client (raw):',
+          '[WS] Container -> Client (msg #' + containerState.messageCount + '):',
           typeof event.data,
           typeof event.data === 'string' ? event.data.slice(0, 500) : '(binary)',
         );
@@ -356,30 +449,31 @@ app.all('*', async (c) => {
 
       // Try to intercept and transform error messages
       if (typeof data === 'string') {
-        try {
-          const parsed = JSON.parse(data);
+        const parseResult = safeJsonParse(data, debugLogs);
+        if (parseResult.parsed && parseResult.data) {
           if (debugLogs) {
-            console.log('[WS] Parsed JSON, has error.message:', !!parsed.error?.message);
+            console.log('[WS] Parsed JSON successfully, has error.message:', !!(parseResult.data.error as Record<string, unknown>)?.message);
           }
-          if (parsed.error?.message) {
+          const errorMsg = (parseResult.data.error as Record<string, unknown> | undefined)?.message;
+          if (errorMsg && typeof errorMsg === 'string') {
             if (debugLogs) {
-              console.log('[WS] Original error.message:', parsed.error.message);
+              console.log('[WS] Original error.message:', errorMsg);
             }
-            parsed.error.message = transformErrorMessage(parsed.error.message, url.host);
+            (parseResult.data.error as Record<string, unknown>).message = transformErrorMessage(errorMsg, url.host);
             if (debugLogs) {
-              console.log('[WS] Transformed error.message:', parsed.error.message);
+              console.log('[WS] Transformed error.message:', (parseResult.data.error as Record<string, unknown>).message);
             }
-            data = JSON.stringify(parsed);
-          }
-        } catch (e) {
-          if (debugLogs) {
-            console.log('[WS] Not JSON or parse error:', e);
+            data = JSON.stringify(parseResult.data);
           }
         }
       }
 
       if (serverWs.readyState === WebSocket.OPEN) {
-        serverWs.send(data);
+        try {
+          serverWs.send(data);
+        } catch (e) {
+          console.error('[WS] Failed to send message to client:', e instanceof Error ? e.message : String(e));
+        }
       } else if (debugLogs) {
         console.log('[WS] Server not open, readyState:', serverWs.readyState);
       }
@@ -388,15 +482,21 @@ app.all('*', async (c) => {
     // Handle close events
     serverWs.addEventListener('close', (event) => {
       if (debugLogs) {
-        console.log('[WS] Client closed:', event.code, event.reason);
+        console.log('[WS] Client closed:', event.code, event.reason, '(received', clientState.messageCount, 'messages)');
       }
-      containerWs.close(event.code, event.reason);
+      clientTimeout.cleanup();
+      containerTimeout.cleanup();
+      if (containerWs.readyState === WebSocket.OPEN) {
+        containerWs.close(event.code, event.reason);
+      }
     });
 
     containerWs.addEventListener('close', (event) => {
       if (debugLogs) {
-        console.log('[WS] Container closed:', event.code, event.reason);
+        console.log('[WS] Container closed:', event.code, event.reason, '(received', containerState.messageCount, 'messages)');
       }
+      clientTimeout.cleanup();
+      containerTimeout.cleanup();
       // Transform the close reason (truncate to 123 bytes max for WebSocket spec)
       let reason = transformErrorMessage(event.reason, url.host);
       if (reason.length > 123) {
@@ -405,22 +505,33 @@ app.all('*', async (c) => {
       if (debugLogs) {
         console.log('[WS] Transformed close reason:', reason);
       }
-      serverWs.close(event.code, reason);
+      if (serverWs.readyState === WebSocket.OPEN) {
+        serverWs.close(event.code, reason);
+      }
     });
 
     // Handle errors
     serverWs.addEventListener('error', (event) => {
       console.error('[WS] Client error:', event);
-      containerWs.close(1011, 'Client error');
+      clientTimeout.cleanup();
+      containerTimeout.cleanup();
+      if (containerWs.readyState === WebSocket.OPEN) {
+        containerWs.close(1011, 'Client error');
+      }
     });
 
     containerWs.addEventListener('error', (event) => {
       console.error('[WS] Container error:', event);
-      serverWs.close(1011, 'Container error');
+      clientTimeout.cleanup();
+      containerTimeout.cleanup();
+      if (serverWs.readyState === WebSocket.OPEN) {
+        serverWs.close(1011, 'Container error');
+      }
     });
 
     if (debugLogs) {
-      console.log('[WS] Returning intercepted WebSocket response');
+      console.log('[WS] Returning intercepted WebSocket response with inactivity timeout (' +
+        (WS_INACTIVITY_TIMEOUT_MS / 1000) + 's)');
     }
     return new Response(null, {
       status: 101,
