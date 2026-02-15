@@ -50,5 +50,6 @@
 
 ## それでも 7003 の場合
 
-- [Cloudflare Support](https://dash.cloudflare.com/?to=/:account/support) に問い合わせ
-- 伝える内容: Error 7003, endpoint `workers/services`, 公式 Containers テンプレートでも同様に失敗
+- **様子を見る**: 再購読後、1〜2日で反映される場合がある
+- **Cloudflare Support** に問い合わせ: https://dash.cloudflare.com/?to=/:account/support
+  - 伝える内容: Error 7003, endpoint `workers/services`, 公式 Containers テンプレート・別 Worker 名でも同様に失敗
