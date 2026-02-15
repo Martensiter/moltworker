@@ -48,6 +48,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      - name: Diagnostic - Deploy official Containers template
+        run: |
+          git clone --depth 1 https://github.com/cloudflare/templates.git /tmp/cf-templates
+          cd /tmp/cf-templates/containers-template
+          npm ci
+          npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy to Cloudflare
         run: npm run deploy
         env:
