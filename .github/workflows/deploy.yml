@@ -1,5 +1,5 @@
 # Deploy moltbot-sandbox to Cloudflare Workers (Container Worker)
-#
+# Trigger: push to main or manual Run workflow
 # Runs in GitHub's cloud - no local Docker required.
 # Push to main or manually trigger to deploy.
 #
