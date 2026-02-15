@@ -4,7 +4,7 @@
 # Push to main or manually trigger to deploy.
 #
 # Required secrets:
-#   CLOUDFLARE_API_TOKEN  - Create at https://dash.cloudflare.com/profile/api-tokens (Workers Scripts Edit)
+#   CLOUDFLARE_API_TOKEN  - Custom token: Workers Scripts Edit + Containers Edit
 #   CLOUDFLARE_ACCOUNT_ID - Your account ID (Dashboard URL or Workers overview sidebar)
 name: Deploy
 

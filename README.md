@@ -93,7 +93,9 @@ git push -u origin main
 Then in your repo (you have Admin on your fork/new repo):
 
 1. **Add repository secrets** (Settings → Secrets and variables → Actions):
-   - `CLOUDFLARE_API_TOKEN`: [Create API token](https://dash.cloudflare.com/profile/api-tokens) with "Edit" for Workers Scripts
+   - `CLOUDFLARE_API_TOKEN`: [Create API token](https://dash.cloudflare.com/profile/api-tokens) — use "Create Custom Token" and add:
+     - **Account** → Workers Scripts: Edit
+     - **Account** → Containers: Edit (required for Container Workers deploy)
    - `CLOUDFLARE_ACCOUNT_ID`: Your account ID (Workers overview sidebar or Dashboard URL)
 
 2. **Set Worker secrets** in Cloudflare Dashboard (Workers → moltbot-sandbox → Settings → Variables and Secrets):
