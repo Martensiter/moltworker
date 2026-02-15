@@ -386,4 +386,78 @@ debug.get('/container-config', async (c) => {
   }
 });
 
+// POST /debug/fix-gateway-auth - Remove token auth from config and restart gateway
+// This is a one-time fix for containers that still have gateway.auth.token in their config.
+// After this, the gateway runs without token auth (CF Access handles external auth).
+debug.post('/fix-gateway-auth', async (c) => {
+  const sandbox = c.get('sandbox');
+  const steps: { step: string; ok: boolean; detail?: string }[] = [];
+
+  try {
+    // Step 1: Read current config
+    const readProc = await sandbox.startProcess('cat /root/.openclaw/openclaw.json');
+    await waitForProcess(readProc, 5000);
+    const readLogs = await readProc.getLogs();
+    const configRaw = readLogs.stdout || '';
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(configRaw);
+    } catch {
+      return c.json({ error: 'Failed to parse config', raw: configRaw }, 500);
+    }
+    steps.push({ step: 'read-config', ok: true });
+
+    // Step 2: Remove gateway auth token and allowInsecureAuth
+    const gw = config.gateway as Record<string, unknown> | undefined;
+    if (gw?.auth) {
+      delete (gw.auth as Record<string, unknown>).token;
+      // Clean up empty auth object
+      if (Object.keys(gw.auth as object).length === 0) {
+        delete gw.auth;
+      }
+    }
+    if (gw?.controlUi) {
+      delete (gw.controlUi as Record<string, unknown>).allowInsecureAuth;
+      if (Object.keys(gw.controlUi as object).length === 0) {
+        delete gw.controlUi;
+      }
+    }
+    steps.push({ step: 'patch-config', ok: true });
+
+    // Step 3: Write updated config
+    const newConfig = JSON.stringify(config, null, 2);
+    const writeCmd = `cat > /root/.openclaw/openclaw.json << 'EOFCONFIG'\n${newConfig}\nEOFCONFIG`;
+    const writeProc = await sandbox.startProcess(writeCmd);
+    await waitForProcess(writeProc, 5000);
+    steps.push({ step: 'write-config', ok: writeProc.exitCode === 0 });
+
+    // Step 4: Kill existing gateway process
+    const killProc = await sandbox.startProcess('pkill -f "openclaw gateway" || true');
+    await waitForProcess(killProc, 5000);
+    steps.push({ step: 'kill-gateway', ok: true });
+
+    // Step 5: Wait a moment for process to die
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // Step 6: Start gateway without token
+    const startCmd = 'nohup openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan > /tmp/gateway.log 2>&1 &';
+    const startProc = await sandbox.startProcess(startCmd);
+    await waitForProcess(startProc, 3000);
+    steps.push({ step: 'start-gateway', ok: true });
+
+    // Step 7: Wait for gateway to be ready
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    steps.push({ step: 'wait-ready', ok: true });
+
+    return c.json({
+      success: true,
+      message: 'Gateway auth token removed and gateway restarted without token auth',
+      steps,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return c.json({ error: errorMessage, steps }, 500);
+  }
+});
+
 export { debug };

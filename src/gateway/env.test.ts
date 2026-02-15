@@ -94,11 +94,12 @@ describe('buildEnvVars', () => {
     expect(result.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com');
   });
 
-  // Gateway token mapping
-  it('maps MOLTBOT_GATEWAY_TOKEN to OPENCLAW_GATEWAY_TOKEN for container', () => {
+  // Gateway token is intentionally NOT passed to the container
+  // (CF Access handles auth; gateway runs without token auth)
+  it('does NOT pass MOLTBOT_GATEWAY_TOKEN to container', () => {
     const env = createMockEnv({ MOLTBOT_GATEWAY_TOKEN: 'my-token' });
     const result = buildEnvVars(env);
-    expect(result.OPENCLAW_GATEWAY_TOKEN).toBe('my-token');
+    expect(result.OPENCLAW_GATEWAY_TOKEN).toBeUndefined();
   });
 
   // Channel tokens
@@ -144,7 +145,7 @@ describe('buildEnvVars', () => {
     expect(result.CF_ACCOUNT_ID).toBe('acct-123');
   });
 
-  it('combines all env vars correctly', () => {
+  it('combines all env vars correctly (no gateway token)', () => {
     const env = createMockEnv({
       ANTHROPIC_API_KEY: 'sk-key',
       MOLTBOT_GATEWAY_TOKEN: 'token',
@@ -154,7 +155,6 @@ describe('buildEnvVars', () => {
 
     expect(result).toEqual({
       ANTHROPIC_API_KEY: 'sk-key',
-      OPENCLAW_GATEWAY_TOKEN: 'token',
       TELEGRAM_BOT_TOKEN: 'tg',
     });
   });

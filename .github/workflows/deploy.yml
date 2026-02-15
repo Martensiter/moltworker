@@ -1,0 +1,45 @@
+# Deploy moltbot-sandbox to Cloudflare Workers (Container Worker)
+#
+# Runs in GitHub's cloud - no local Docker required.
+# Push to main or manually trigger to deploy.
+#
+# Required secrets: CLOUDFLARE_API_TOKEN
+# Optional: Set in Cloudflare Dashboard > Workers > moltbot-sandbox > Settings > Variables
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - 'start-openclaw.sh'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'vite.config.*'
+      - 'skills/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # GitHub-hosted runners have Docker pre-installed (required for container worker build)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Deploy to Cloudflare
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

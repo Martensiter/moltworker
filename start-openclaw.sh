@@ -164,9 +164,15 @@ if (process.env.OPENCLAW_GATEWAY_TOKEN) {
     config.gateway.auth.token = process.env.OPENCLAW_GATEWAY_TOKEN;
 }
 
+// Allow Control UI connections without gateway token.
+// Cloudflare Access handles authentication at the edge, so the container-level
+// token auth is redundant for the Control UI WebSocket. sandbox.wsConnect()
+// does not forward URL query params, making token-based WS auth impossible.
+config.gateway.controlUi = config.gateway.controlUi || {};
+config.gateway.controlUi.allowInsecureAuth = true;
+
 if (process.env.OPENCLAW_DEV_MODE === 'true') {
-    config.gateway.controlUi = config.gateway.controlUi || {};
-    config.gateway.controlUi.allowInsecureAuth = true;
+    console.log('Dev mode enabled');
 }
 
 // Legacy AI Gateway base URL override:

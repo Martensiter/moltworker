@@ -70,23 +70,45 @@ npx wrangler secret put ANTHROPIC_API_KEY
 # npx wrangler secret put CF_AI_GATEWAY_ACCOUNT_ID
 # npx wrangler secret put CF_AI_GATEWAY_GATEWAY_ID
 
-# Generate and set a gateway token (required for remote access)
-# Save this token - you'll need it to access the Control UI
-export MOLTBOT_GATEWAY_TOKEN=$(openssl rand -hex 32)
-echo "Your gateway token: $MOLTBOT_GATEWAY_TOKEN"
-echo "$MOLTBOT_GATEWAY_TOKEN" | npx wrangler secret put MOLTBOT_GATEWAY_TOKEN
+# Optional: gateway token for admin CLI / device pairing
+# When using CF Access, the gateway runs without token auth (no token needed for Control UI)
+# npx wrangler secret put MOLTBOT_GATEWAY_TOKEN
 
 # Deploy
 npm run deploy
 ```
 
-After deploying, open the Control UI with your token:
+### Deploy from GitHub (no local Docker)
+
+Deploy without Docker Desktop using GitHub Actions. Use either:
+
+- **A) Fork**: If this repo is on GitHub, [Fork](https://docs.github.com/get-started/quickstart/fork-a-repo) it to your account
+- **B) New repo**: Create a new repo, add as `origin`, and push
+
+```bash
+git remote add origin https://github.com/YOUR_USERNAME/moltworker.git
+git push -u origin main
+```
+
+Then in your repo (you have Admin on your fork/new repo):
+
+1. **Add repository secret** (Settings → Secrets and variables → Actions → New repository secret):
+   - Name: `CLOUDFLARE_API_TOKEN`
+   - Value: [Create API token](https://dash.cloudflare.com/profile/api-tokens) with "Edit" for Workers Scripts
+
+2. **Set Worker secrets** in Cloudflare Dashboard (Workers → moltbot-sandbox → Settings → Variables and Secrets):
+   - `ANTHROPIC_API_KEY`, `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, etc.
+
+3. **Push to main** (or run "Deploy" workflow manually)
+   - Build and deploy run on GitHub-hosted runners (Docker included)
+
+After deploying, open the Control UI:
 
 ```
-https://your-worker.workers.dev/?token=YOUR_GATEWAY_TOKEN
+https://your-worker.workers.dev/
 ```
 
-Replace `your-worker` with your actual worker subdomain and `YOUR_GATEWAY_TOKEN` with the token you generated above.
+Replace `your-worker` with your actual worker subdomain. If Cloudflare Access is enabled, sign in when prompted. The gateway runs without token auth when behind CF Access.
 
 **Note:** The first request may take 1-2 minutes while the container starts.
 

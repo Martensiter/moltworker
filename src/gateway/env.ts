@@ -36,8 +36,11 @@ export function buildEnvVars(env: MoltbotEnv): Record<string, string> {
     envVars.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL;
   }
 
-  // Map MOLTBOT_GATEWAY_TOKEN to OPENCLAW_GATEWAY_TOKEN (container expects this name)
-  if (env.MOLTBOT_GATEWAY_TOKEN) envVars.OPENCLAW_GATEWAY_TOKEN = env.MOLTBOT_GATEWAY_TOKEN;
+  // NOTE: We intentionally do NOT pass MOLTBOT_GATEWAY_TOKEN to the container.
+  // The container runs on a private network, accessible only through the Worker proxy.
+  // CF Access handles external authentication, so gateway-level token auth is unnecessary.
+  // Removing it avoids the problem of sandbox.wsConnect() not forwarding query params,
+  // which made it impossible for the Control UI WebSocket to authenticate via token.
   if (env.DEV_MODE) envVars.OPENCLAW_DEV_MODE = env.DEV_MODE;
   if (env.TELEGRAM_BOT_TOKEN) envVars.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
   if (env.TELEGRAM_DM_POLICY) envVars.TELEGRAM_DM_POLICY = env.TELEGRAM_DM_POLICY;

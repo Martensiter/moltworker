@@ -29,6 +29,7 @@ import { createAccessMiddleware } from './auth';
 import { ensureMoltbotGateway, findExistingMoltbotProcess } from './gateway';
 import { publicRoutes, api, adminUi, debug, cdp } from './routes';
 import { redactSensitiveParams } from './utils/logging';
+import { safeWebSocketClose, sanitizeCloseReason } from './utils/websocket';
 import loadingPageHtml from './assets/loading.html';
 import configErrorHtml from './assets/config-error.html';
 
@@ -125,9 +126,8 @@ function validateRequiredEnv(env: MoltbotEnv): string[] {
   const missing: string[] = [];
   const isTestMode = env.DEV_MODE === 'true' || env.E2E_TEST_MODE === 'true';
 
-  if (!env.MOLTBOT_GATEWAY_TOKEN) {
-    missing.push('MOLTBOT_GATEWAY_TOKEN');
-  }
+  // MOLTBOT_GATEWAY_TOKEN is optional: kept for admin CLI commands but no longer
+  // required for gateway auth (CF Access handles external authentication).
 
   // CF Access vars not required in dev/test mode since auth is skipped
   // CF_ACCESS_AUD is optional — when set, JWT audience is verified as defense-in-depth;
@@ -297,6 +297,9 @@ app.all('*', async (c) => {
   const request = c.req.raw;
   const url = new URL(request.url);
 
+  const isWebSocketRequest = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
+  const acceptsHtml = request.headers.get('Accept')?.includes('text/html') ?? false;
+
   console.log('[PROXY] Handling request:', url.pathname);
 
   // Check if gateway is already running
@@ -304,8 +307,6 @@ app.all('*', async (c) => {
   const isGatewayReady = existingProcess !== null && existingProcess.status === 'running';
 
   // For browser requests (non-WebSocket, non-API), show loading page if gateway isn't ready
-  const isWebSocketRequest = request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
-  const acceptsHtml = request.headers.get('Accept')?.includes('text/html');
 
   if (!isGatewayReady && !isWebSocketRequest && acceptsHtml) {
     console.log('[PROXY] Gateway not ready, serving loading page');
@@ -356,15 +357,13 @@ app.all('*', async (c) => {
       console.log('[WS] URL:', url.pathname + redactedSearch);
     }
 
-    // Inject gateway token into WebSocket request if not already present.
-    // CF Access redirects strip query params, so authenticated users lose ?token=.
-    // Since the user already passed CF Access auth, we inject the token server-side.
-    let wsRequest = request;
-    if (c.env.MOLTBOT_GATEWAY_TOKEN && !url.searchParams.has('token')) {
-      const tokenUrl = new URL(url.toString());
-      tokenUrl.searchParams.set('token', c.env.MOLTBOT_GATEWAY_TOKEN);
-      wsRequest = new Request(tokenUrl.toString(), request);
-    }
+    // Build WebSocket request with Origin rewritten to match the container's internal host.
+    // The gateway rejects connections whose Origin doesn't match (controlUi.allowedOrigins).
+    // Since we're an authenticated proxy (CF Access), rewrite Origin so the gateway accepts.
+    const wsHeaders = new Headers(request.headers);
+    wsHeaders.set('Origin', `http://localhost:${MOLTBOT_PORT}`);
+    wsHeaders.set('Host', `localhost:${MOLTBOT_PORT}`);
+    const wsRequest = new Request(request.url, { headers: wsHeaders });
 
     // Get WebSocket connection to the container
     const containerResponse = await sandbox.wsConnect(wsRequest, MOLTBOT_PORT);
@@ -413,6 +412,17 @@ app.all('*', async (c) => {
       clientState.lastMessageTime = Date.now();
       clientState.messageCount++;
 
+      // Always log chat.send so we can verify user messages reach the gateway
+      if (typeof event.data === 'string') {
+        try {
+          const m = JSON.parse(event.data) as { method?: string; type?: string };
+          if (m?.type === 'req' && m?.method === 'chat.send') {
+            console.log('[WS] [CHAT] Client sent chat.send');
+          }
+        } catch {
+          /* ignore */
+        }
+      }
       if (debugLogs) {
         console.log(
           '[WS] Client -> Container (msg #' + clientState.messageCount + '):',
@@ -436,6 +446,20 @@ app.all('*', async (c) => {
       containerState.lastMessageTime = Date.now();
       containerState.messageCount++;
 
+      // Always log chat-related responses/events so we can verify AI replies flow back
+      if (typeof event.data === 'string') {
+        try {
+          const d = JSON.parse(event.data) as { type?: string; method?: string; event?: string; ok?: boolean };
+          if (d?.type === 'res' && String(d?.method || '').startsWith('chat.')) {
+            console.log('[WS] [CHAT] Container res:', d.method, d.ok ? 'ok' : 'error');
+          }
+          if (d?.type === 'event' && String(d?.event || '').startsWith('chat.')) {
+            console.log('[WS] [CHAT] Container event:', d.event);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
       if (debugLogs) {
         console.log(
           '[WS] Container -> Client (msg #' + containerState.messageCount + '):',
@@ -485,7 +509,7 @@ app.all('*', async (c) => {
       clientTimeout.cleanup();
       containerTimeout.cleanup();
       if (containerWs.readyState === WebSocket.OPEN) {
-        containerWs.close(event.code, event.reason);
+        safeWebSocketClose(containerWs, event.code, event.reason);
       }
     });
 
@@ -495,16 +519,13 @@ app.all('*', async (c) => {
       }
       clientTimeout.cleanup();
       containerTimeout.cleanup();
-      // Transform the close reason (truncate to 123 bytes max for WebSocket spec)
-      let reason = transformErrorMessage(event.reason, url.host);
-      if (reason.length > 123) {
-        reason = reason.slice(0, 120) + '...';
-      }
+      // Transform and sanitize the close reason (<= 123 bytes)
+      const reason = sanitizeCloseReason(transformErrorMessage(event.reason, url.host));
       if (debugLogs) {
         console.log('[WS] Transformed close reason:', reason);
       }
       if (serverWs.readyState === WebSocket.OPEN) {
-        serverWs.close(event.code, reason);
+        safeWebSocketClose(serverWs, event.code, reason);
       }
     });
 
@@ -514,7 +535,7 @@ app.all('*', async (c) => {
       clientTimeout.cleanup();
       containerTimeout.cleanup();
       if (containerWs.readyState === WebSocket.OPEN) {
-        containerWs.close(1011, 'Client error');
+        safeWebSocketClose(containerWs, 1011, 'Client error');
       }
     });
 
@@ -523,7 +544,7 @@ app.all('*', async (c) => {
       clientTimeout.cleanup();
       containerTimeout.cleanup();
       if (serverWs.readyState === WebSocket.OPEN) {
-        serverWs.close(1011, 'Container error');
+        safeWebSocketClose(serverWs, 1011, 'Container error');
       }
     });
 
@@ -537,6 +558,8 @@ app.all('*', async (c) => {
     });
   }
 
+  // No gateway token needed: the container runs without token auth.
+  // CF Access handles all external authentication at the Worker edge.
   console.log('[HTTP] Proxying:', url.pathname + url.search);
   const httpResponse = await sandbox.containerFetch(request, MOLTBOT_PORT);
   console.log('[HTTP] Response status:', httpResponse.status);
