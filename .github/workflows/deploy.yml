@@ -22,6 +22,12 @@ on:
       - 'skills/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
+    inputs:
+      test_new_worker_name:
+        description: 'Deploy with worker name moltbot-sandbox-v2 (to test if 7003 is worker-specific)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   deploy:
@@ -47,6 +53,12 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Use test worker name (moltbot-sandbox-v2)
+        if: inputs.test_new_worker_name == 'true'
+        run: |
+          sed -i 's/"name": "moltbot-sandbox"/"name": "moltbot-sandbox-v2"/' wrangler.jsonc
+          echo "Deploying as moltbot-sandbox-v2 to test if 7003 is worker-specific"
 
       - name: Deploy to Cloudflare
         run: npm run deploy
