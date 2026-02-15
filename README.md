@@ -101,6 +101,7 @@ Then in your repo (you have Admin on your fork/new repo):
 2. **Verify Workers Paid plan** (required for Containers):
    - [Workers & Pages](https://dash.cloudflare.com/?to=/:account/workers-and-pages) → **Overview** → **Plans**
    - Must be **Workers Paid** ($5/month). Free plan returns error 7003 ("Could not route to workers/services").
+   - **After resubscribing:** Wait 15–30 min for propagation. If 7003 persists, try: Workers & Pages → moltbot-sandbox → Delete Worker → redeploy for a clean state.
 
 3. **Push to main** (or run "Deploy" workflow manually)
    - Build and deploy run on GitHub-hosted runners (Docker included)
