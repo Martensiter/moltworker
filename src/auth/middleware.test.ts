@@ -279,7 +279,10 @@ describe('createAccessMiddleware', () => {
 
   it('normalizes CF_ACCESS_TEAM_DOMAIN when it is a URL', async () => {
     const { c, redirectMock } = createFullMockContext({
-      env: { CF_ACCESS_TEAM_DOMAIN: 'https://ichitaro.cloudflareaccess.com', CF_ACCESS_AUD: 'aud123' },
+      env: {
+        CF_ACCESS_TEAM_DOMAIN: 'https://ichitaro.cloudflareaccess.com',
+        CF_ACCESS_AUD: 'aud123',
+      },
     });
     const middleware = createAccessMiddleware({ type: 'html', redirectOnMissing: true });
     const next = vi.fn();

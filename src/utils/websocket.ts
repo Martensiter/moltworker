@@ -57,4 +57,3 @@ export function safeWebSocketClose(ws: WebSocket, code: unknown, reason: unknown
     }
   }
 }
-
