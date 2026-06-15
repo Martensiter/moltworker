@@ -68,7 +68,10 @@ function transformErrorMessage(message: string, host: string): string {
  * - Logs parse failures for debugging
  * - Allows graceful fallback to sending unparsed data
  */
-function safeJsonParse(data: string, debugLogs: boolean): { parsed: boolean; data: Record<string, unknown> | null } {
+function safeJsonParse(
+  data: string,
+  debugLogs: boolean,
+): { parsed: boolean; data: Record<string, unknown> | null } {
   try {
     const result = JSON.parse(data);
     return { parsed: true, data: result };
@@ -99,17 +102,22 @@ function setupInactivityTimeout(
 ): { cleanup: () => void } {
   let timeoutId: ReturnType<typeof setInterval>;
 
-  timeoutId = setInterval(() => {
-    const now = Date.now();
-    const inactiveMs = now - wsState.lastMessageTime;
+  timeoutId = setInterval(
+    () => {
+      const now = Date.now();
+      const inactiveMs = now - wsState.lastMessageTime;
 
-    if (inactiveMs > timeoutMs && ws.readyState === WebSocket.OPEN) {
-      if (debugLogs) {
-        console.log(`[WS] ${label} inactivity timeout (${inactiveMs}ms > ${timeoutMs}ms), closing connection`);
+      if (inactiveMs > timeoutMs && ws.readyState === WebSocket.OPEN) {
+        if (debugLogs) {
+          console.log(
+            `[WS] ${label} inactivity timeout (${inactiveMs}ms > ${timeoutMs}ms), closing connection`,
+          );
+        }
+        ws.close(1000, 'Inactivity timeout');
       }
-      ws.close(1000, 'Inactivity timeout');
-    }
-  }, Math.min(timeoutMs / 4, 10000)); // Check every 1/4 of timeout or 10s, whichever is smaller
+    },
+    Math.min(timeoutMs / 4, 10000),
+  ); // Check every 1/4 of timeout or 10s, whichever is smaller
 
   return {
     cleanup: () => clearInterval(timeoutId),
@@ -398,7 +406,13 @@ app.all('*', async (c) => {
     const containerState: WebSocketState = { lastMessageTime: Date.now(), messageCount: 0 };
 
     // Setup inactivity timeout handlers
-    const clientTimeout = setupInactivityTimeout(serverWs, clientState, WS_INACTIVITY_TIMEOUT_MS, debugLogs, 'Client');
+    const clientTimeout = setupInactivityTimeout(
+      serverWs,
+      clientState,
+      WS_INACTIVITY_TIMEOUT_MS,
+      debugLogs,
+      'Client',
+    );
     const containerTimeout = setupInactivityTimeout(
       containerWs,
       containerState,
@@ -434,7 +448,10 @@ app.all('*', async (c) => {
         try {
           containerWs.send(event.data);
         } catch (e) {
-          console.error('[WS] Failed to send message to container:', e instanceof Error ? e.message : String(e));
+          console.error(
+            '[WS] Failed to send message to container:',
+            e instanceof Error ? e.message : String(e),
+          );
         }
       } else if (debugLogs) {
         console.log('[WS] Container not open, readyState:', containerWs.readyState);
@@ -449,7 +466,12 @@ app.all('*', async (c) => {
       // Always log chat-related responses/events so we can verify AI replies flow back
       if (typeof event.data === 'string') {
         try {
-          const d = JSON.parse(event.data) as { type?: string; method?: string; event?: string; ok?: boolean };
+          const d = JSON.parse(event.data) as {
+            type?: string;
+            method?: string;
+            event?: string;
+            ok?: boolean;
+          };
           if (d?.type === 'res' && String(d?.method || '').startsWith('chat.')) {
             console.log('[WS] [CHAT] Container res:', d.method, d.ok ? 'ok' : 'error');
           }
@@ -474,16 +496,25 @@ app.all('*', async (c) => {
         const parseResult = safeJsonParse(data, debugLogs);
         if (parseResult.parsed && parseResult.data) {
           if (debugLogs) {
-            console.log('[WS] Parsed JSON successfully, has error.message:', !!(parseResult.data.error as Record<string, unknown>)?.message);
+            console.log(
+              '[WS] Parsed JSON successfully, has error.message:',
+              !!(parseResult.data.error as Record<string, unknown>)?.message,
+            );
           }
           const errorMsg = (parseResult.data.error as Record<string, unknown> | undefined)?.message;
           if (errorMsg && typeof errorMsg === 'string') {
             if (debugLogs) {
               console.log('[WS] Original error.message:', errorMsg);
             }
-            (parseResult.data.error as Record<string, unknown>).message = transformErrorMessage(errorMsg, url.host);
+            (parseResult.data.error as Record<string, unknown>).message = transformErrorMessage(
+              errorMsg,
+              url.host,
+            );
             if (debugLogs) {
-              console.log('[WS] Transformed error.message:', (parseResult.data.error as Record<string, unknown>).message);
+              console.log(
+                '[WS] Transformed error.message:',
+                (parseResult.data.error as Record<string, unknown>).message,
+              );
             }
             data = JSON.stringify(parseResult.data);
           }
@@ -494,7 +525,10 @@ app.all('*', async (c) => {
         try {
           serverWs.send(data);
         } catch (e) {
-          console.error('[WS] Failed to send message to client:', e instanceof Error ? e.message : String(e));
+          console.error(
+            '[WS] Failed to send message to client:',
+            e instanceof Error ? e.message : String(e),
+          );
         }
       } else if (debugLogs) {
         console.log('[WS] Server not open, readyState:', serverWs.readyState);
@@ -504,7 +538,14 @@ app.all('*', async (c) => {
     // Handle close events
     serverWs.addEventListener('close', (event) => {
       if (debugLogs) {
-        console.log('[WS] Client closed:', event.code, event.reason, '(received', clientState.messageCount, 'messages)');
+        console.log(
+          '[WS] Client closed:',
+          event.code,
+          event.reason,
+          '(received',
+          clientState.messageCount,
+          'messages)',
+        );
       }
       clientTimeout.cleanup();
       containerTimeout.cleanup();
@@ -515,7 +556,14 @@ app.all('*', async (c) => {
 
     containerWs.addEventListener('close', (event) => {
       if (debugLogs) {
-        console.log('[WS] Container closed:', event.code, event.reason, '(received', containerState.messageCount, 'messages)');
+        console.log(
+          '[WS] Container closed:',
+          event.code,
+          event.reason,
+          '(received',
+          containerState.messageCount,
+          'messages)',
+        );
       }
       clientTimeout.cleanup();
       containerTimeout.cleanup();
@@ -549,8 +597,11 @@ app.all('*', async (c) => {
     });
 
     if (debugLogs) {
-      console.log('[WS] Returning intercepted WebSocket response with inactivity timeout (' +
-        (WS_INACTIVITY_TIMEOUT_MS / 1000) + 's)');
+      console.log(
+        '[WS] Returning intercepted WebSocket response with inactivity timeout (' +
+          WS_INACTIVITY_TIMEOUT_MS / 1000 +
+          's)',
+      );
     }
     return new Response(null, {
       status: 101,

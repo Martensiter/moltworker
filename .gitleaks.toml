@@ -1,0 +1,12 @@
+# gitleaks config — extends the built-in default ruleset and allowlists
+# known false positives so the secret-scan workflow stays green.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlisted false positives"
+# Fake redaction-test fixtures (e.g. token=abc123def456) used to assert that
+# logging redacts sensitive query params. Not real secrets.
+paths = [
+  '''src/logging\.test\.ts''',
+]

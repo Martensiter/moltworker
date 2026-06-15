@@ -49,4 +49,3 @@ describe('sanitizeCloseReason', () => {
     expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
   });
 });
-

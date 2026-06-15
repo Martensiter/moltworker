@@ -440,7 +440,8 @@ debug.post('/fix-gateway-auth', async (c) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Step 6: Start gateway without token
-    const startCmd = 'nohup openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan > /tmp/gateway.log 2>&1 &';
+    const startCmd =
+      'nohup openclaw gateway --port 18789 --verbose --allow-unconfigured --bind lan > /tmp/gateway.log 2>&1 &';
     const startProc = await sandbox.startProcess(startCmd);
     await waitForProcess(startProc, 3000);
     steps.push({ step: 'start-gateway', ok: true });
