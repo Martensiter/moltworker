@@ -34,7 +34,7 @@ npm run deploy     # build + wrangler deploy
 ```
 
 CI (`.github/workflows/test.yml`) runs lint, format check, typecheck, unit tests
-(`unit` job) and E2E (`e2e` job). A `unit`-job failure pings Slack via
+(`unit` job) and E2E (`e2e` job). A `unit`-job failure pings Discord via
 `notify-failure`; `e2e` is excluded from the notify since it depends on
 Cloudflare/R2 deploy secrets and is environment-sensitive.
 
