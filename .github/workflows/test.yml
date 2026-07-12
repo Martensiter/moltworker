@@ -226,12 +226,13 @@ jobs:
 
   notify-failure:
     # Only the deterministic `unit` gate (lint/format/typecheck/vitest) pings
-    # Slack. The `e2e` job depends on Cloudflare/R2 deploy secrets and is
+    # Discord. The `e2e` job depends on Cloudflare/R2 deploy secrets and is
     # environment-sensitive, so wiring it here would produce noise, not signal.
     # Re-add `e2e` once it is reliably green.
     needs: [unit]
     if: failure()
-    uses: ./.github/workflows/notify-slack-reusable.yml
+    uses: ./.github/workflows/notify-discord-reusable.yml
     with:
-      custom_text: ":x: CI (unit) failed on `${{ github.ref_name }}` — ${{ github.repository }}"
+      channel: alerts
+      custom_text: "❌ CI (unit) failed on `${{ github.ref_name }}` — ${{ github.repository }}"
     secrets: inherit
